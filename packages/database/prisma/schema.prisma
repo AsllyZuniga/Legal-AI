@@ -1,0 +1,953 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ROLES Y USUARIOS
+// ============================================
+
+model Role {
+  id          String   @id
+  name        String
+  permissions Json     @default("[]")
+  createdAt   DateTime @default(now()) @map("created_at")
+  users       User[]
+
+  @@map("roles")
+}
+
+model User {
+  id                  String   @id @default(uuid()) @db.Uuid
+  email               String?  @unique
+  documentNumber      String   @unique @map("document_number")
+  passwordHash        String   @map("password_hash")
+  fullName            String   @map("full_name")
+  lawFirm             String?  @map("law_firm")
+  phone               String?
+  roleId              String   @default("lawyer") @map("role_id")
+  avatarUrl           String?  @map("avatar_url")
+  credits             Int      @default(1000)
+  dailyCreditsUsed    Int      @default(0) @map("daily_credits_used")
+  dailyCreditsResetAt DateTime @default(now()) @map("daily_credits_reset_at")
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  role               Role                @relation(fields: [roleId], references: [id])
+  cases              Case[]
+  userDocuments      UserDocument[]
+  conversations      Conversation[]
+  savedRulings       SavedRuling[]
+  generatedDocuments GeneratedDocument[]
+  analysisSessions   AnalysisSession[]
+  auditLogs          AuditLog[]
+  notes              Note[]
+  casePermissions    CasePermission[]
+  integrationConnections IntegrationConnection[]
+  templateFavorites      TemplateFavorite[]
+
+  @@map("users")
+}
+
+// ============================================
+// CASOS
+// ============================================
+
+model Case {
+  id                        String   @id @default(uuid()) @db.Uuid
+  userId                    String   @map("user_id") @db.Uuid
+  name                      String
+  description               String?
+  legalArea                 String?  @map("legal_area")
+  subarea                   String?
+  processType               String?  @map("process_type")
+  client                    String?
+  court                     String?
+  fileNumber                String?  @map("file_number")
+  city                      String?
+  startDate                 DateTime? @map("start_date")
+  responsibleLawyer         String?  @map("responsible_lawyer")
+  opposingParty             String?  @map("opposing_party")
+  pretensions               String?  @map("pretensions")
+  amount                    Decimal? @db.Decimal(15, 2)
+  priority                  String   @default("medium")
+  parties                   Json?
+  legalProblemDescription   String?  @map("legal_problem_description")
+  previousProceedings       Json?    @map("previous_proceedings")
+  previousDecisions         Json?    @map("previous_decisions")
+  additionalInfo            String?  @map("additional_info")
+  chronologicalFactsOrdered Boolean  @default(false) @map("chronological_facts_ordered")
+  lastActivityAt            DateTime? @map("last_activity_at")
+  status                    String   @default("active")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  user               User                @relation(fields: [userId], references: [id])
+  caseFacts          CaseFact[]
+  caseEvents         CaseEvent[]
+  casePersons        CasePerson[]
+  caseEvidence       CaseEvidence[]
+  caseLegalIssues    CaseLegalIssue[]
+  casePretensions    CasePretension[]
+  caseDefenses       CaseDefense[]
+  caseAlerts         CaseAlert[]
+  caseTasks          CaseTask[]
+  caseHearings       CaseHearing[]
+  caseNorms          CaseNorm[]
+  userDocuments      UserDocument[]
+  documentVersions   DocumentVersion[]
+  conversations      Conversation[]
+  generatedDocuments GeneratedDocument[]
+  savedRulings       SavedRuling[]
+  casePermissions    CasePermission[]
+  notes              Note[]
+  analysisSessions   AnalysisSession[]
+  caseJurisprudence  CaseJurisprudence[]
+
+  @@index([userId])
+  @@index([legalArea])
+  @@index([status])
+  @@map("cases")
+}
+
+model CasePermission {
+  id         String   @id @default(uuid()) @db.Uuid
+  caseId     String   @map("case_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  permission String   @default("read")
+  grantedBy  String?  @map("granted_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([caseId, userId])
+  @@map("case_permissions")
+}
+
+// ============================================
+// HECHOS Y EVENTOS
+// ============================================
+
+model CaseFact {
+  id                    String    @id @default(uuid()) @db.Uuid
+  caseId                String    @map("case_id") @db.Uuid
+  factType              String    @map("fact_type")
+  description           String
+  eventDate             DateTime? @map("event_date")
+  eventDateText         String?   @map("event_date_text")
+  isDateExact           Boolean   @default(true) @map("is_date_exact")
+  chronologicalOrder    Int?      @map("chronological_order")
+  isJuridicallyRelevant Boolean   @default(false) @map("is_juridically_relevant")
+  relevanceExplanation  String?   @map("relevance_explanation")
+  sourceType            String?   @map("source_type")
+  sourceDocumentId      String?   @map("source_document_id")
+  sourcePage            Int?      @map("source_page")
+  sourceQuote           String?   @map("source_quote")
+  verificationStatus    String    @default("unverified") @map("verification_status")
+  metadata              Json      @default("{}")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  case         Case         @relation(fields: [caseId], references: [id])
+  factEntities FactEntity[]
+
+  @@index([caseId])
+  @@map("case_facts")
+}
+
+model FactEntity {
+  id             String  @id @default(uuid()) @db.Uuid
+  factId         String  @map("fact_id") @db.Uuid
+  entityType     String? @map("entity_type")
+  entityName     String? @map("entity_name")
+  entityRole     String? @map("entity_role")
+  documentNumber String? @map("document_number")
+
+  fact CaseFact @relation(fields: [factId], references: [id])
+
+  @@map("fact_entities")
+}
+
+model CaseEvent {
+  id                    String   @id @default(uuid()) @db.Uuid
+  caseId                String   @map("case_id") @db.Uuid
+  factId                String?  @map("fact_id") @db.Uuid
+  description           String
+  eventDate             DateTime @map("event_date")
+  isDateExact           Boolean  @default(true) @map("is_date_exact")
+  chronologicalOrder    Int?     @map("chronological_order")
+  isJuridicallyRelevant Boolean  @default(false) @map("is_juridically_relevant")
+  metadata              Json     @default("{}")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@index([eventDate])
+  @@map("case_events")
+}
+
+// ============================================
+// PRETENSIONES Y DEFENSAS
+// ============================================
+
+model CasePretension {
+  id             String   @id @default(uuid()) @db.Uuid
+  caseId         String   @map("case_id") @db.Uuid
+  description    String
+  legalBasis     String?  @map("legal_basis")
+  estimatedValue Decimal? @map("estimated_value") @db.Decimal(15, 2)
+  currency       String   @default("COP")
+  status         String   @default("proposed")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@map("case_pretensions")
+}
+
+model CaseDefense {
+  id             String   @id @default(uuid()) @db.Uuid
+  caseId         String   @map("case_id") @db.Uuid
+  defenseType    String?  @map("defense_type")
+  description    String
+  legalBasis     String?  @map("legal_basis")
+  strength       String   @default("medium")
+  sourceRulingId String?  @map("source_ruling_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@map("case_defenses")
+}
+
+// ============================================
+// ALERTAS Y TAREAS
+// ============================================
+
+model CaseAlert {
+  id              String    @id @default(uuid()) @db.Uuid
+  caseId          String    @map("case_id") @db.Uuid
+  alertType       String    @map("alert_type")
+  priority        String    @default("medium")
+  title           String
+  description     String
+  recommendation  String?
+  relatedFactId   String?   @map("related_fact_id") @db.Uuid
+  relatedRulingId String?   @map("related_ruling_id") @db.Uuid
+  isAcknowledged  Boolean   @default(false) @map("is_acknowledged")
+  acknowledgedAt  DateTime? @map("acknowledged_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@index([priority])
+  @@map("case_alerts")
+}
+
+model CaseTask {
+  id          String    @id @default(uuid()) @db.Uuid
+  caseId      String    @map("case_id") @db.Uuid
+  description String
+  taskType    String    @default("action") @map("task_type")
+  priority    String    @default("medium")
+  dueDate     DateTime? @map("due_date")
+  isCompleted Boolean   @default(false) @map("is_completed")
+  createdBy   String    @default("system") @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@map("case_tasks")
+}
+
+model CasePerson {
+  id             String  @id @default(uuid()) @db.Uuid
+  caseId         String  @map("case_id") @db.Uuid
+  personType     String  @map("person_type")
+  fullName       String  @map("full_name")
+  documentType   String? @map("document_type")
+  documentNumber String? @map("document_number")
+  email          String?
+  phone          String?
+  address        String?
+  role           String?
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@map("case_persons")
+}
+
+model CaseEvidence {
+  id             String  @id @default(uuid()) @db.Uuid
+  caseId         String  @map("case_id") @db.Uuid
+  evidenceType   String  @map("evidence_type")
+  title          String
+  description    String?
+  relatedFactIds Json    @default("[]") @map("related_fact_ids")
+  relatedPersonIds Json  @default("[]") @map("related_person_ids")
+  relatedDocumentIds Json @default("[]") @map("related_document_ids")
+  relatedLegalIssueIds Json @default("[]") @map("related_legal_issue_ids")
+  status         String  @default("pending")
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@map("case_evidence")
+}
+
+model CaseLegalIssue {
+  id                  String  @id @default(uuid()) @db.Uuid
+  caseId              String  @map("case_id") @db.Uuid
+  issueType           String  @map("issue_type")
+  title               String
+  legalQuestion       String? @map("legal_question")
+  description         String?
+  partyPosition       String? @map("party_position")
+  opposingPosition    String? @map("opposing_position")
+  relatedNorms        Json    @default("[]") @map("related_norms")
+  relatedRulings      Json    @default("[]") @map("related_rulings")
+  isPrimary           Boolean @default(false) @map("is_primary")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@map("case_legal_issues")
+}
+
+model CaseHearing {
+  id          String    @id @default(uuid()) @db.Uuid
+  caseId      String    @map("case_id") @db.Uuid
+  hearingType String    @map("hearing_type")
+  title       String
+  description String?
+  scheduledAt DateTime? @map("scheduled_at")
+  location    String?
+  status      String    @default("scheduled")
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@map("case_hearings")
+}
+
+model CaseNorm {
+  id          String  @id @default(uuid()) @db.Uuid
+  caseId      String  @map("case_id") @db.Uuid
+  normType    String? @map("norm_type")
+  reference   String
+  description String?
+  relevance   String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@map("case_norms")
+}
+
+model DocumentVersion {
+  id           String   @id @default(uuid()) @db.Uuid
+  documentId   String   @map("document_id") @db.Uuid
+  caseId       String   @map("case_id") @db.Uuid
+  version      Int      @default(1)
+  fileUrl      String   @map("file_url")
+  fileName     String   @map("file_name")
+  fileSize     Int?     @map("file_size")
+  changeLog    String?  @map("change_log")
+  createdBy    String?  @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([documentId])
+  @@index([caseId])
+  @@map("document_versions")
+}
+
+model CaseJurisprudence {
+  id              String   @id @default(uuid()) @db.Uuid
+  caseId          String   @map("case_id") @db.Uuid
+  rulingId        String   @map("ruling_id") @db.Uuid
+  similarityScore Decimal? @map("similarity_score") @db.Decimal(5, 2)
+  relevanceNote   String?  @map("relevance_note")
+  isApplicable    Boolean? @map("is_applicable")
+  analysisNotes   String?  @map("analysis_notes")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@unique([caseId, rulingId])
+  @@index([caseId])
+  @@map("case_jurisprudence")
+}
+
+model IntegrationConnection {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  provider      String
+  accessToken   String?   @map("access_token")
+  refreshToken  String?   @map("refresh_token")
+  tokenExpiresAt DateTime? @map("token_expires_at")
+  scope         String?
+  accountEmail  String?   @map("account_email")
+  accountName   String?   @map("account_name")
+  isActive      Boolean   @default(true) @map("is_active")
+  config        Json      @default("{}")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, provider])
+  @@map("integration_connections")
+}
+
+// ============================================
+// SENTENCIAS
+// ============================================
+
+model Ruling {
+  id               String    @id @default(uuid()) @db.Uuid
+  citation         String
+  rulingType       String?   @map("ruling_type")
+  processType      String?   @map("process_type")
+  corporation      String
+  chamber          String?
+  section          String?
+  magistratePonent String?   @map("magistrate_ponent")
+  magistrates      String?
+  rulingDate       DateTime? @map("ruling_date")
+  publicationDate  DateTime? @map("publication_date")
+  legalArea        String?   @map("legal_area")
+  themes           Json      @default("[]")
+  subthemes        Json      @default("[]")
+  summary          String?
+  fullText         String?   @map("full_text")
+  resuelve         String?
+  sourceUrl        String?   @map("source_url")
+  sourceType       String    @default("official") @map("source_type")
+  source           String    @default("corte_constitucional")
+  pdfUrl           String?   @map("pdf_url")
+  docxUrl          String?   @map("docx_url")
+  downloadUrls     Json      @default("{}") @map("download_urls")
+  radicado         String?
+  referencedNorms  Json      @default("[]") @map("referenced_norms")
+  citedRulings     Json      @default("[]") @map("cited_rulings")
+  citingRulings    Json      @default("[]") @map("citing_rulings")
+  similarityScore  Decimal?  @map("similarity_score") @db.Decimal(5, 2)
+  aiAnalysis       Json?     @map("ai_analysis")
+  embeddingStatus  String    @default("pending") @map("embedding_status")
+  lastSyncAt       DateTime? @map("last_sync_at")
+  metadata         Json      @default("{}")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  rulingChunks    RulingChunk[]
+  sourceRelations JudgmentRelationship[] @relation("sourceRuling")
+  targetRelations JudgmentRelationship[] @relation("targetRuling")
+  savedRulings    SavedRuling[]
+
+  @@index([corporation])
+  @@index([source])
+  @@index([legalArea])
+  @@index([rulingDate])
+  @@index([citation])
+  @@index([embeddingStatus])
+  @@map("rulings")
+}
+
+model RulingChunk {
+  id            String   @id @default(uuid()) @db.Uuid
+  rulingId      String   @map("ruling_id") @db.Uuid
+  content       String
+  // embedding   Unsupported("vector(1024)")?  -- pgvector
+  sectionType   String?  @map("section_type")
+  sectionTitle  String?  @map("section_title")
+  hierarchyPath String?  @map("hierarchy_path")
+  pageNumbers   String?  @map("page_numbers")
+  chunkLevel    Int      @default(2) @map("chunk_level")
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  ruling Ruling @relation(fields: [rulingId], references: [id])
+
+  @@index([rulingId])
+  @@map("ruling_chunks")
+}
+
+model JudgmentRelationship {
+  id               String   @id @default(uuid()) @db.Uuid
+  sourceRulingId   String   @map("source_ruling_id") @db.Uuid
+  targetRulingId   String   @map("target_ruling_id") @db.Uuid
+  relationshipType String   @map("relationship_type")
+  confidence       Decimal? @db.Decimal(3, 2)
+  evidence         String?
+  detectedBy       String   @default("ai") @map("detected_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  sourceRuling Ruling @relation("sourceRuling", fields: [sourceRulingId], references: [id])
+  targetRuling Ruling @relation("targetRuling", fields: [targetRulingId], references: [id])
+
+  @@unique([sourceRulingId, targetRulingId, relationshipType])
+  @@map("judgment_relationships")
+}
+
+// ============================================
+// NORMATIVA
+// ============================================
+
+model Law {
+  id              String    @id @default(uuid()) @db.Uuid
+  name            String
+  number          String?
+  year            Int?
+  type            String?
+  subtipo         String?
+  sector          String?
+  entidad         String?
+  materia         String?
+  articulos       Int?
+  vigencia        String?
+  description     String?
+  fullText        String?   @map("full_text")
+  sourceUrl       String?   @map("source_url")
+  source          String    @default("suin_juriscol")
+  isVigente       Boolean   @default(true) @map("is_vigente")
+  modifiedBy      String?   @map("modified_by")
+  effectiveDate   DateTime? @map("effective_date")
+  embeddingStatus String    @default("pending") @map("embedding_status")
+  lastSyncAt      DateTime? @map("last_sync_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  lawChunks LawChunk[]
+
+  @@index([type])
+  @@index([year])
+  @@index([entidad])
+  @@index([source])
+  @@map("laws")
+}
+
+model LawChunk {
+  id            String   @id @default(uuid()) @db.Uuid
+  lawId         String   @map("law_id") @db.Uuid
+  content       String
+  articleNumber String?  @map("article_number")
+  chapter       String?
+  title         String?
+  isVigente     Boolean  @default(true) @map("is_vigente")
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  law Law @relation(fields: [lawId], references: [id])
+
+  @@index([lawId])
+  @@map("law_chunks")
+}
+
+// ============================================
+// DOCUMENTOS DEL USUARIO
+// ============================================
+
+model UserDocument {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @map("user_id") @db.Uuid
+  caseId               String?  @map("case_id") @db.Uuid
+  fileName             String   @map("file_name")
+  fileUrl              String   @map("file_url")
+  fileSize             Int?     @map("file_size")
+  mimeType             String?  @map("mime_type")
+  extractionMethod     String?  @map("extraction_method")
+  extractionConfidence Decimal? @map("extraction_confidence") @db.Decimal(3, 2)
+  extractedText        String?  @map("extracted_text")
+  documentCategory     String?  @map("document_category")
+  aiAnalysis           Json?    @map("ai_analysis")
+  embeddingStatus      String   @default("pending") @map("embedding_status")
+  linkedFactIds        Json     @default("[]") @map("linked_fact_ids")
+  version              Int      @default(1)
+  author               String?
+  lastModifiedAt       DateTime? @map("last_modified_at")
+  syncStatus           String   @default("local") @map("sync_status")
+  syncSource           String?  @map("sync_source")
+  externalId           String?  @map("external_id")
+  externalUrl          String?  @map("external_url")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user               User                @relation(fields: [userId], references: [id])
+  case               Case?               @relation(fields: [caseId], references: [id])
+  userDocumentChunks UserDocumentChunk[]
+
+  @@index([userId])
+  @@index([caseId])
+  @@map("user_documents")
+}
+
+model UserDocumentChunk {
+  id          String   @id @default(uuid()) @db.Uuid
+  documentId  String   @map("document_id") @db.Uuid
+  content     String
+  sectionType String?  @map("section_type")
+  pageNumbers String?  @map("page_numbers")
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  document UserDocument @relation(fields: [documentId], references: [id])
+
+  @@index([documentId])
+  @@map("user_document_chunks")
+}
+
+// ============================================
+// CONVERSACIONES Y MENSAJES
+// ============================================
+
+model Conversation {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  caseId       String?  @map("case_id") @db.Uuid
+  title        String?
+  analysisMode String   @default("general_chat") @map("analysis_mode")
+  contextId    String?  @map("context_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id])
+  case     Case?     @relation(fields: [caseId], references: [id])
+  messages Message[]
+
+  @@index([userId])
+  @@index([caseId])
+  @@map("conversations")
+}
+
+model Message {
+  id              String   @id @default(uuid()) @db.Uuid
+  conversationId  String   @map("conversation_id") @db.Uuid
+  role            String
+  content         String
+  citations       Json     @default("[]")
+  sources         Json     @default("[]")
+  modelUsed       String?  @map("model_used")
+  tokensUsed      Int?     @map("tokens_used")
+  confidenceScore Decimal? @map("confidence_score") @db.Decimal(3, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+// ============================================
+// SENTENCIAS GUARDADAS
+// ============================================
+
+model SavedRuling {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  rulingId  String   @map("ruling_id") @db.Uuid
+  caseId    String?  @map("case_id") @db.Uuid
+  notes     String?
+  tags      Json     @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  ruling Ruling @relation(fields: [rulingId], references: [id])
+  case   Case?  @relation(fields: [caseId], references: [id])
+
+  @@unique([userId, rulingId])
+  @@map("saved_rulings")
+}
+
+// ============================================
+// ANÃLISIS
+// ============================================
+
+model AnalysisSession {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  caseId           String?  @map("case_id") @db.Uuid
+  analysisType     String   @map("analysis_type")
+  inputData        Json?    @map("input_data")
+  outputData       Json?    @map("output_data")
+  confidenceScore  Decimal? @map("confidence_score") @db.Decimal(3, 2)
+  llmModel         String?  @map("llm_model")
+  tokensUsed       Int?     @map("tokens_used")
+  processingTimeMs Int?     @map("processing_time_ms")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user                User                 @relation(fields: [userId], references: [id])
+  case                Case?                @relation(fields: [caseId], references: [id])
+  analysisFindings    AnalysisFinding[]
+  analysisSources     AnalysisSource[]
+  analysisConclusions AnalysisConclusion[]
+
+  @@map("analysis_sessions")
+}
+
+model AnalysisFinding {
+  id               String   @id @default(uuid()) @db.Uuid
+  sessionId        String   @map("session_id") @db.Uuid
+  findingType      String   @map("finding_type")
+  description      String
+  severity         String   @default("medium")
+  relatedRulingIds Json     @default("[]") @map("related_ruling_ids")
+  relatedNormIds   Json     @default("[]") @map("related_norm_ids")
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  session AnalysisSession @relation(fields: [sessionId], references: [id])
+
+  @@map("analysis_findings")
+}
+
+model AnalysisSource {
+  id               String   @id @default(uuid()) @db.Uuid
+  sessionId        String   @map("session_id") @db.Uuid
+  sourceType       String   @map("source_type")
+  sourceId         String   @map("source_id") @db.Uuid
+  relevanceScore   Decimal? @map("relevance_score") @db.Decimal(3, 2)
+  snippet          String?
+  usedInConclusion Boolean  @default(false) @map("used_in_conclusion")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  session AnalysisSession @relation(fields: [sessionId], references: [id])
+
+  @@map("analysis_sources")
+}
+
+model AnalysisConclusion {
+  id                String   @id @default(uuid()) @db.Uuid
+  sessionId         String   @map("session_id") @db.Uuid
+  conclusionType    String   @map("conclusion_type")
+  content           String
+  supportingSources Json     @default("[]") @map("supporting_sources")
+  confidenceLevel   Decimal? @map("confidence_level") @db.Decimal(3, 2)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  session AnalysisSession @relation(fields: [sessionId], references: [id])
+
+  @@map("analysis_conclusions")
+}
+
+// ============================================
+// DOCUMENTOS GENERADOS
+// ============================================
+
+model GeneratedDocument {
+  id            String   @id @default(uuid()) @db.Uuid
+  caseId        String   @map("case_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  documentType  String   @map("document_type")
+  title         String?
+  content       String
+  formatVersion String   @default("1.0") @map("format_version")
+  qualityChecks Json?    @map("quality_checks")
+  qualityPassed Boolean  @default(false) @map("quality_passed")
+  docxUrl       String?  @map("docx_url")
+  pdfUrl        String?  @map("pdf_url")
+  llmModel      String?  @map("llm_model")
+  tokensUsed    Int?     @map("tokens_used")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  case Case @relation(fields: [caseId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([caseId])
+  @@map("generated_documents")
+}
+
+// ============================================
+// AUDITORÃA
+// ============================================
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  action       String
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  details      Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================
+// NOTAS
+// ============================================
+
+model Note {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  caseId           String?  @map("case_id") @db.Uuid
+  title            String?
+  content          String?
+  relatedRulingIds Json     @default("[]") @map("related_ruling_ids")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user User  @relation(fields: [userId], references: [id])
+  case Case? @relation(fields: [caseId], references: [id])
+
+  @@map("notes")
+}
+
+// ============================================
+// FUENTES Y INGESTA
+// ============================================
+
+model SourceRegistry {
+  id             String    @id @default(uuid()) @db.Uuid
+  name           String
+  sourceType     String    @map("source_type")
+  url            String?
+  apiUrl         String?   @map("api_url")
+  adapterClass   String?   @map("adapter_class")
+  lastSyncAt     DateTime? @map("last_sync_at")
+  lastSyncStatus String?   @map("last_sync_status")
+  totalDocuments Int       @default(0) @map("total_documents")
+  isActive       Boolean   @default(true) @map("is_active")
+  config         Json      @default("{}")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  ingestionJobs IngestionJob[]
+
+  @@map("source_registry")
+}
+
+model IngestionJob {
+  id             String    @id @default(uuid()) @db.Uuid
+  sourceId       String?   @map("source_id") @db.Uuid
+  status         String    @default("pending")
+  itemsProcessed Int       @default(0) @map("items_processed")
+  itemsTotal     Int?      @map("items_total")
+  itemsFailed    Int       @default(0) @map("items_failed")
+  errorMessage   String?   @map("error_message")
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  source SourceRegistry? @relation(fields: [sourceId], references: [id])
+
+  @@map("ingestion_jobs")
+}
+
+// ============================================
+// PLANTILLAS JURIDICAS - BIBLIOTECA COMPLETA
+// ============================================
+
+model LegalTemplate {
+  id                   String    @id @default(uuid()) @db.Uuid
+  name                 String
+  description          String?
+  legalArea            String    @map("legal_area")
+  subcategory          String?   @map("subcategory")
+  documentType         String    @map("document_type")
+  purpose              String?
+  fileType             String    @default("docx") @map("file_type")
+  fileSize             Int?      @map("file_size")
+  fileUrl              String    @map("file_url")
+  thumbnailUrl         String?   @map("thumbnail_url")
+  tags                 Json      @default("[]")
+  jurisdiction         String?   @default("Colombia")
+  isDefault            Boolean   @default(false) @map("is_default")
+  uploadedBy           String?   @map("uploaded_by") @db.Uuid
+  downloadCount        Int       @default(0) @map("download_count")
+  favoriteCount        Int       @default(0) @map("favorite_count")
+
+  vigencyStatus        String    @default("vigente") @map("vigency_status")
+  lastReviewDate       DateTime? @map("last_review_date")
+  reviewYear           Int?      @map("review_year")
+  relatedNorms         Json      @default("[]") @map("related_norms")
+  relatedJurisprudence Json      @default("[]") @map("related_jurisprudence")
+  officialSource       String?   @map("official_source")
+  sourceUrl            String?   @map("source_url")
+  vigencyNotes         String?   @map("vigency_notes")
+  normVersion          String?   @map("norm_version")
+  needsRevision        Boolean   @default(false) @map("needs_revision")
+  revisionReason       String?   @map("revision_reason")
+
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  favorites            TemplateFavorite[]
+
+  @@index([legalArea])
+  @@index([documentType])
+  @@index([purpose])
+  @@index([vigencyStatus])
+  @@index([isDefault])
+  @@index([reviewYear])
+  @@index([officialSource])
+  @@map("legal_templates")
+}
+
+model TemplateFavorite {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  templateId String   @map("template_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user     User          @relation(fields: [userId], references: [id])
+  template LegalTemplate @relation(fields: [templateId], references: [id])
+
+  @@unique([userId, templateId])
+  @@map("template_favorites")
+}
+
+// ============================================
+// NOTICIAS JURIDICAS
+// ============================================
+
+model News {
+  id          String    @id @default(uuid()) @db.Uuid
+  title       String
+  summary     String
+  content     String?
+  category    String    @default("nacional")
+  source      String
+  sourceUrl   String?   @map("source_url")
+  imageUrl    String?   @map("image_url")
+  tags        Json      @default("[]")
+  isFeatured  Boolean   @default(false) @map("is_featured")
+  isActive    Boolean   @default(true) @map("is_active")
+  publishedAt DateTime  @default(now()) @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@index([isFeatured])
+  @@index([publishedAt])
+  @@map("news")
+}
