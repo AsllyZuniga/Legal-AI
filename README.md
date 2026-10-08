@@ -11,6 +11,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/AsllyZuniga/Legal-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/AsllyZuniga/Legal-AI/actions/workflows/ci.yml)
 
 </div>
 
