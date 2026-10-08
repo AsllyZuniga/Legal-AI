@@ -1,0 +1,31 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode/claude-opus-5-5",
+  "small_model": "opencode/claude-sonnet-5-5",
+  "default_agent": "abogado",
+  "instructions": ["AGENTS.md", ".opencode/skills/derecho-colombiano/SKILL.md"],
+  "experimental": {
+    "mcp_timeout": 60000
+  },
+  "permission": {
+    "edit": "ask",
+    "bash": {
+      "*": "ask",
+      "docker exec *": "allow",
+      "git status*": "allow",
+      "git log*": "allow",
+      "git diff*": "allow"
+    },
+    "webfetch": "allow"
+  },
+  "mcp": {
+    "legal-ai": {
+      "type": "local",
+      "command": [
+        "apps\\mcp\\.venv\\Scripts\\python.exe",
+        "apps\\mcp\\server.py"
+      ],
+      "enabled": true
+    }
+  }
+}
