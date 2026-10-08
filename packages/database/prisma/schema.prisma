@@ -459,6 +459,7 @@ model Ruling {
   embeddingStatus  String    @default("pending") @map("embedding_status")
   lastSyncAt       DateTime? @map("last_sync_at")
   metadata         Json      @default("{}")
+  searchVector     Unsupported("tsvector")? @map("search_vector")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
@@ -480,7 +481,7 @@ model RulingChunk {
   id            String   @id @default(uuid()) @db.Uuid
   rulingId      String   @map("ruling_id") @db.Uuid
   content       String
-  // embedding   Unsupported("vector(1024)")?  -- pgvector
+  embedding     Unsupported("vector(1024)")? @map("embedding")
   sectionType   String?  @map("section_type")
   sectionTitle  String?  @map("section_title")
   hierarchyPath String?  @map("hierarchy_path")
@@ -537,6 +538,7 @@ model Law {
   effectiveDate   DateTime? @map("effective_date")
   embeddingStatus String    @default("pending") @map("embedding_status")
   lastSyncAt      DateTime? @map("last_sync_at")
+  searchVector   Unsupported("tsvector")? @map("search_vector")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -553,6 +555,7 @@ model LawChunk {
   id            String   @id @default(uuid()) @db.Uuid
   lawId         String   @map("law_id") @db.Uuid
   content       String
+  embedding     Unsupported("vector(1024)")? @map("embedding")
   articleNumber String?  @map("article_number")
   chapter       String?
   title         String?
