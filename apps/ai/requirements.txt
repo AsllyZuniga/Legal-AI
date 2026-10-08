@@ -21,3 +21,4 @@ pyspellchecker==0.7.0
 langdetect==1.0.9
 scikit-learn==1.5.0
 numpy==1.26.0
+aiohttp==3.14.3
