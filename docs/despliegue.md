@@ -22,7 +22,7 @@ Cuando termine (la primera vez tarda: `npm ci` + dependencias de Python + tesser
 
 La web de `localhost:8080` habla con la API por el proxy interno de nginx (`/api` → servicio `api`), así que no hay que configurar URLs del backend.
 
-Variables: el compose toma valores del archivo `.env` de la raíz (copia `.env.example` a `.env` y ajusta). Si no existe, usa los defaults locales de desarrollo. **Antes de exponerlo a internet, cambia todas las contraseñas y los secretos JWT.**
+Variables: el compose **exige** un archivo `.env` en la raíz (copia `.env.example` a `.env` y rellena los secretos). Ya **no hay credenciales por defecto** en el repositorio: los servicios fallan con un mensaje claro si falta la variable. Los puertos de infraestructura se publican solo en `127.0.0.1` (no accesibles desde la red).
 
 Para bajar todo: `docker compose -f docker-compose.full.yml down`. Para borrar también datos: añade `-v`.
 
@@ -39,34 +39,58 @@ Estado en: https://github.com/AsllyZuniga/Legal-AI/actions (o el badge del READM
 
 Pendiente de configurar (hoy **no** está y por eso no se ejecuta en CI): linter. Los scripts `npm run lint` existen pero **no hay `eslint` instalado ni configuración** en ningún workspace, así que fallarían. Es una tarea aparte.
 
-## 3. Ponerlo online con URL pública
+## 3. Ponerlo online con UN solo link (VPS + Caddy)
 
-GitHub **no** ejecuta aplicaciones web; solo compila (CI) y guarda código. Para una URL pública que abra en cualquier navegador hay dos caminos reales:
+GitHub **no** ejecuta aplicaciones web; solo compila (CI) y guarda código. Para tener una única URL pública
+(por ejemplo `https://legal-ai.tudominio.com`) que abra todo el programa, el camino que respeta esta
+arquitectura tal cual es un **VPS con Docker + Caddy** (reverse proxy con TLS automático).
 
-### Opción recomendada: un servidor propio (VPS)
+El `docker-compose.full.yml` ya trae el servicio `caddy` bajo el perfil `prod`. Pasos:
 
-Es el que respeta la arquitectura tal cual, sin adaptaciones:
+1. **VPS** (DigitalOcean, Hetzner, AWS Lightsail…) con Docker y Docker Compose instalados. Abre los puertos **80** y **443**.
+2. **DNS:** crea un registro `A` de tu dominio (p. ej. `legal-ai.tudominio.com`) apuntando a la IP del VPS. Espera la propagación.
+3. **Clonar** el repo en el servidor y entrar a la carpeta.
+4. **Crear el `.env` de producción:**
+   ```bash
+   cp .env.production.example .env
+   # edita .env: DOMAIN, ACME_EMAIL, FRONTEND_URL
+   # y genera cada secreto con:  openssl rand -hex 48
+   ```
+5. **Levantar todo (una sola orden):**
+   ```bash
+   docker compose -f docker-compose.full.yml --profile prod up -d --build
+   ```
+6. Abre **`https://tu-dominio`**. Caddy obtiene y renueva el certificado solo. Ese es el único link.
 
-1. Un VPS (DigitalOcean, Hetzner, AWS Lightsail…) con Docker instalado.
-2. Clonar el repo, crear el `.env` de producción con secretos fuertes.
-3. `docker compose -f docker-compose.full.yml up -d --build`.
-4. Abrir el puerto 8080 y poner delante un reverse proxy con TLS (Caddy o nginx + Let's Encrypt).
-5. En `.env`, poner `FRONTEND_URL` con el dominio real (lo usa CORS; también el redirect de Google OAuth).
+Qué queda expuesto: solo **80/443** (Caddy). Postgres, Redis, MinIO, API, IA y la web quedan atados a
+`127.0.0.1` dentro del servidor. El nginx del contenedor `web` enruta `/api` a la API, así que el frontend y
+el backend comparten el mismo dominio sin configurar URLs.
 
-Google OAuth, además, exige registrar el redirect exacto `https://tu-dominio/integrations/google/callback` en Google Cloud (ver `docs/ingeniero.md`).
+Google OAuth exige registrar el redirect exacto `https://tu-dominio/integrations/google/callback` en Google
+Cloud (ver `docs/ingeniero.md`).
 
-### Alternativa: plataformas PaaS (Render / Railway / Fly.io)
+### Alternativa: PaaS (Render / Railway / Fly.io)
 
-Son cómodas, pero este stack tiene tres piezas que **no encajan sin trabajo extra**:
+Más cómodas, pero este stack tiene tres piezas que **no encajan sin trabajo extra**: `pgvector` (en Render
+solo en planes pagos), MinIO (no hay S3 gestionado local; hay que sustituirlo por S3 real) y el proxy del
+frontend (parametrizar el host interno). No hay un `render.yaml` de un clic: quedaría roto.
 
-- **Postgres con `pgvector`:** en Render solo está en planes pagos.
-- **MinIO** (almacenamiento S3 local): no existe como servicio gestionado; hay que desplegarlo aparte con disco persistente.
-- **nginx del frontend:** hoy apunta al host interno `api`; en un PaaS el hostname interno es distinto y hay que parametrizarlo.
+## 4. Secretos y credenciales
 
-Por eso no hay un `render.yaml` de un clic: quedaría roto. Si eliges esta vía, el adaptado sería un trabajo aparte (parametrizar el proxy y sustituir MinIO por S3 real).
+- El repositorio **no contiene credenciales**: los valores reales viven en `.env` (ignorado por git) o en el
+  `.env` del servidor. En el código solo hay marcadores `CAMBIAR_POR_SEGURO`.
+- Los compose **exigen** las variables (`${VAR:?…}`), así que no hay contraseñas por defecto utilizables.
+- Genera cada secreto con `openssl rand -hex 48`. Rota `DB_PASSWORD`, `REDIS_PASSWORD`,
+  `MINIO_ROOT_PASSWORD`, `AI_SERVICE_SECRET`, `JWT_SECRET` y `JWT_REFRESH_SECRET`.
 
-## 4. Antes de exponer en producción
+> **Si ya tenías un volumen de Postgres creado con una contraseña anterior**, cambiar `DB_PASSWORD` en el
+> `.env` no actualiza el usuario dentro de la base de datos. Opciones:
+> - Sin perder datos: `docker exec -it legal-ai-postgres psql -U legal_user -d legal_ai -c "ALTER USER legal_user WITH PASSWORD 'NUEVA_CLAVE';"`
+> - O recrear la base (borra datos): `docker compose -f docker-compose.full.yml down -v` y volver a levantar.
+> Redis y MinIO no tienen este problema: su credencial es de arranque.
 
-- Cambiar contraseñas por defecto (`CAMBIAR_POR_SEGURO`, `CAMBIAR_POR_SEGURO`, `CAMBIAR_POR_SEGURO`) y los `JWT_SECRET` / `JWT_REFRESH_SECRET`.
+## 5. Antes de exponer en producción
+
 - Revisar `docs/ingeniero.md` (fases 1 y 2): hay correcciones de confidencialidad pendientes (URLs públicas de documentos, borrado real en MinIO/Drive, cifrado de tokens).
 - El seed real no está en `npm run db:seed` (es un `echo`): revisar `packages/database/seed-mock.sql`.
+- Poner un `OPENAI_API_KEY` real y `COHERE_API_KEY` si aplica.

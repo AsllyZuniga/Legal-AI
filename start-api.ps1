@@ -1,6 +1,5 @@
-cd "C:\Users\Aslly zuniga\Desktop\legal-ai\apps\api"
-$env:DATABASE_URL="postgresql://legal_user:CAMBIAR_POR_SEGURO@localhost:5433/legal_ai"
-$env:JWT_SECRET="CAMBIAR_POR_SEGURO"
-$env:JWT_EXPIRATION="24h"
-$env:JWT_REFRESH_SECRET="CAMBIAR_POR_SEGURO"
+# Arranca la API en local (node dist/main.js).
+# Las variables (DATABASE_URL, JWT_SECRET, ...) se leen de apps/api/.env,
+# que carga @nestjs/config. Aqui no hay ningun secreto.
+Set-Location -LiteralPath "$PSScriptRoot\apps\api"
 node dist/main.js

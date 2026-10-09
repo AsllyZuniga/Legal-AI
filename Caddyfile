@@ -1,0 +1,10 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# Un solo dominio sirve la interfaz; el nginx del contenedor web enruta /api a la API.
+# Caddy pide y renueva el certificado TLS (Let's Encrypt) automáticamente.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy web:80
+}
