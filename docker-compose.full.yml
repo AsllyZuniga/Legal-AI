@@ -85,6 +85,7 @@ services:
       JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
       AI_SERVICE_URL: http://ai:8000
       AI_SERVICE_SECRET: ${AI_SERVICE_SECRET:?define AI_SERVICE_SECRET en .env}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
       DEFAULT_CREDITS_PER_USER: ${DEFAULT_CREDITS_PER_USER:-1000}
       DAILY_CREDIT_LIMIT: ${DAILY_CREDIT_LIMIT:-200}
@@ -102,10 +103,18 @@ services:
     environment:
       DATABASE_URL: postgresql://legal_user:${DB_PASSWORD:?define DB_PASSWORD en .env}@postgres:5432/legal_ai
       AI_SERVICE_SECRET: ${AI_SERVICE_SECRET:?define AI_SERVICE_SECRET en .env}
+      # LLM compatible con OpenAI (Gemini por defecto). OPENAI_BASE_URL en .env.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gemini-2.5-flash}
+      # Embeddings locales (gratis) con sentence-transformers.
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}
+      LOCAL_EMBEDDING_MODEL: ${LOCAL_EMBEDDING_MODEL:-BAAI/bge-m3}
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
       COHERE_API_KEY: ${COHERE_API_KEY:-}
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - hf_cache:/root/.cache/huggingface
     ports:
       - "127.0.0.1:8000:8000"
 
@@ -148,3 +157,4 @@ volumes:
   minio_data:
   caddy_data:
   caddy_config:
+  hf_cache:
