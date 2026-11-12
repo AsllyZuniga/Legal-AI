@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { JurisprudenceService } from '../jurisprudence/jurisprudence.service';
 import axios from 'axios';
@@ -82,11 +83,27 @@ export class ChatService {
     const isFollowUp = this.isFollowUpQuestion(content, previousMessages);
 
     let result: { response: string; citations: any[]; sources: any[]; confidence: number };
+    let modelUsed = 'local-search';
 
-    try {
-      result = await this.searchAndRespondLocal(content, conversation.caseId ?? undefined, conversationHistory, isFollowUp);
-    } catch {
-      result = await this.searchAndRespondFallback(content);
+    if (this.isCasualQuery(content)) {
+      result = {
+        response: this.generateCasualResponse(content),
+        citations: [],
+        sources: [],
+        confidence: 0.95,
+      };
+    } else {
+      const aiResult = await this.routeToAi(content, conversationHistory, isFollowUp);
+      if (aiResult) {
+        result = aiResult;
+        modelUsed = 'ai';
+      } else {
+        try {
+          result = await this.searchAndRespondLocal(content, conversation.caseId ?? undefined, conversationHistory, isFollowUp);
+        } catch {
+          result = await this.searchAndRespondFallback(content);
+        }
+      }
     }
 
     const aiResponse = await this.prisma.message.create({
@@ -96,7 +113,7 @@ export class ChatService {
         content: result.response,
         citations: result.citations,
         sources: result.sources,
-        modelUsed: 'local-search',
+        modelUsed,
         confidenceScore: result.confidence,
       },
     });
@@ -140,6 +157,115 @@ export class ChatService {
     ];
 
     return followUpPatterns.some(p => p.test(query));
+  }
+
+  private isCasualQuery(query: string): boolean {
+    const trimmed = query.trim();
+    const patterns = [
+      /^(hola|buenos dias|buenas tardes|buenas noches|buenas|hey|saludos|que tal|qué tal)\b/i,
+      /^(gracias|muchas gracias|mil gracias)\b/i,
+      /^(quien eres|quién eres|que eres|qué eres|que puedes hacer|qué puedes hacer|ayuda|help|como funciona|cómo funciona|que haces|qué haces)\b/i,
+      /^(adios|adiós|hasta luego|chao|nos vemos)\b/i,
+    ];
+    if (trimmed.split(/\s+/).length > 5) return false;
+    return patterns.some(p => p.test(trimmed));
+  }
+
+  private generateCasualResponse(query: string): string {
+    const t = query.trim().toLowerCase();
+    if (/gracias/.test(t)) {
+      return 'Con gusto. Estoy aquí para ayudarte con consultas de derecho colombiano: sentencias de la Corte Constitucional, normas y análisis jurídico.';
+    }
+    if (/hola|buenos dias|buenas tardes|buenas noches|buenas|hey|saludos|que tal|qué tal/.test(t)) {
+      return '¡Hola! Soy tu asistente jurídico. Puedo ayudarte a buscar sentencias de la Corte Constitucional, normas y a analizar conceptos de derecho colombiano. ¿En qué te puedo colaborar?';
+    }
+    if (/quien eres|quién eres|que eres|qué eres|que puedes hacer|qué puedes hacer|ayuda|help|como funciona|cómo funciona|que haces|qué haces/.test(t)) {
+      return 'Soy un asistente especializado en derecho colombiano. Puedo:\n\n- Buscar y analizar sentencias de la Corte Constitucional (ej: "T-760", "C-041/17")\n- Buscar normas y leyes colombianas\n- Analizar conceptos jurídicos y líneas jurisprudenciales\n\n¿Qué consulta tienes?';
+    }
+    if (/adios|adiós|hasta luego|chao|nos vemos/.test(t)) {
+      return '¡Hasta luego! Si necesitas algo más, aquí estaré.';
+    }
+    return 'Estoy aquí para ayudarte con consultas de derecho colombiano. ¿Qué necesitas?';
+  }
+
+  private async routeToAi(
+    query: string,
+    conversationHistory: any[],
+    isFollowUp: boolean,
+  ): Promise<{ response: string; citations: any[]; sources: any[]; confidence: number } | null> {
+    if (!this.aiServiceUrl) return null;
+
+    const searchResults = await this.aiSemanticSearch(query);
+
+    try {
+      const payload = {
+        query,
+        search_results: searchResults.slice(0, 5).map(r => ({
+          citation: r.citation,
+          corporation: r.corporation,
+          chamber: r.chamber,
+          magistrate_ponent: r.magistrate_ponent,
+          ruling_date: r.ruling_date,
+          legal_area: r.legal_area,
+          summary: r.summary,
+          snippet: r.snippet,
+          source_url: r.source_url,
+        })),
+        conversation_history: conversationHistory.slice(-10),
+        is_follow_up: isFollowUp,
+      };
+
+      const resp = await axios.post(
+        `${this.aiServiceUrl}/internal/chat/respond`,
+        payload,
+        {
+          headers: { 'X-AI-Service-Secret': this.aiServiceSecret },
+          timeout: 60000,
+        },
+      );
+
+      const data = resp.data;
+      if (!data || typeof data.response !== 'string' || !data.response.trim()) {
+        return null;
+      }
+
+      const citations = searchResults.map(r => ({ text: r.citation, rulingId: r.ruling_id }));
+      const sources = searchResults.map(r => ({
+        id: r.ruling_id,
+        type: 'ruling',
+        title: r.citation,
+        snippet: (r.summary || r.snippet || '').substring(0, 200),
+        sourceUrl: r.source_url,
+        hasPdf: !!r.source_url,
+        hasDocx: !!r.source_url,
+      }));
+
+      return {
+        response: data.response,
+        citations,
+        sources,
+        confidence: typeof data.confidence === 'number' ? data.confidence : 0.8,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async aiSemanticSearch(query: string): Promise<any[]> {
+    try {
+      const resp = await axios.post(
+        `${this.aiServiceUrl}/internal/search/semantic`,
+        { query, top_k: 8 },
+        {
+          headers: { 'X-AI-Service-Secret': this.aiServiceSecret },
+          timeout: 60000,
+        },
+      );
+      const results = resp.data?.results;
+      return Array.isArray(results) ? results : [];
+    } catch {
+      return [];
+    }
   }
 
   private async searchAndRespondLocal(
@@ -346,50 +472,40 @@ export class ChatService {
     const keywords = query.split(/\s+/).filter(w => w.length > 2).slice(0, 8);
     if (keywords.length === 0) return [];
 
-    const conditions = keywords.map((_, i) => {
-      const paramIdx = i + 1;
-      return `(summary ILIKE $${paramIdx} OR citation ILIKE $${paramIdx} OR process_type ILIKE $${paramIdx} OR radicado ILIKE $${paramIdx} OR magistrate_ponent ILIKE $${paramIdx} OR full_text ILIKE $${paramIdx})`;
-    });
-    const params: string[] = [];
-    keywords.forEach(k => params.push(`%${k}%`));
+    const likeParams = keywords.map(k => Prisma.sql`${`%${k}%`}`);
+    const conditions = likeParams.map(p =>
+      Prisma.sql`(summary ILIKE ${p} OR citation ILIKE ${p} OR process_type ILIKE ${p} OR radicado ILIKE ${p} OR magistrate_ponent ILIKE ${p} OR full_text ILIKE ${p})`,
+    );
+    const relevance = likeParams.map(p =>
+      Prisma.sql`((CASE WHEN summary ILIKE ${p} THEN 1 ELSE 0 END) + (CASE WHEN citation ILIKE ${p} THEN 1 ELSE 0 END) + (CASE WHEN full_text ILIKE ${p} THEN 1 ELSE 0 END))`,
+    );
 
-    const relevanceScore = keywords.map((_, i) => {
-      const paramIdx = i + 1;
-      return `(CASE WHEN summary ILIKE $${paramIdx} THEN 1 ELSE 0 END) + (CASE WHEN citation ILIKE $${paramIdx} THEN 1 ELSE 0 END) + (CASE WHEN full_text ILIKE $${paramIdx} THEN 1 ELSE 0 END)`;
-    }).join(' + ');
-
-    const sql = `SELECT id, citation, corporation, chamber, magistrate_ponent, ruling_date, legal_area, themes, summary, resuelve, full_text, source_url, referenced_norms, process_type, radicado
-     FROM rulings
-     WHERE ${conditions.join(' OR ')}
-     ORDER BY (${relevanceScore}) DESC, ruling_date DESC
-     LIMIT 30`;
-
-    return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
+    return this.prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT id, citation, corporation, chamber, magistrate_ponent, ruling_date, legal_area, themes, summary, resuelve, full_text, source_url, referenced_norms, process_type, radicado
+      FROM rulings
+      WHERE ${Prisma.join(conditions, ' OR ')}
+      ORDER BY (${Prisma.join(relevance, ' + ')}) DESC, ruling_date DESC
+      LIMIT 30`);
   }
 
   private async searchLaws(query: string): Promise<any[]> {
     const keywords = query.split(/\s+/).filter(w => w.length > 2).slice(0, 8);
     if (keywords.length === 0) return [];
 
-    const conditions = keywords.map((_, i) => {
-      const paramIdx = i + 1;
-      return `(name ILIKE $${paramIdx} OR description ILIKE $${paramIdx} OR materia ILIKE $${paramIdx})`;
-    });
-    const params: string[] = [];
-    keywords.forEach(k => params.push(`%${k}%`));
+    const likeParams = keywords.map(k => Prisma.sql`${`%${k}%`}`);
+    const conditions = likeParams.map(p =>
+      Prisma.sql`(name ILIKE ${p} OR description ILIKE ${p} OR materia ILIKE ${p})`,
+    );
+    const relevance = likeParams.map(p =>
+      Prisma.sql`((CASE WHEN name ILIKE ${p} THEN 2 ELSE 0 END) + (CASE WHEN description ILIKE ${p} THEN 1 ELSE 0 END))`,
+    );
 
-    const relevanceScore = keywords.map((_, i) => {
-      const paramIdx = i + 1;
-      return `(CASE WHEN name ILIKE $${paramIdx} THEN 2 ELSE 0 END) + (CASE WHEN description ILIKE $${paramIdx} THEN 1 ELSE 0 END)`;
-    }).join(' + ');
-
-    const sql = `SELECT id, name, number, year, type, subtipo, sector, entidad, materia, description, vigencia, source_url
-     FROM laws
-     WHERE ${conditions.join(' OR ')}
-     ORDER BY (${relevanceScore}) DESC, year DESC NULLS LAST
-     LIMIT 30`;
-
-    return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
+    return this.prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT id, name, number, year, type, subtipo, sector, entidad, materia, description, vigencia, source_url
+      FROM laws
+      WHERE ${Prisma.join(conditions, ' OR ')}
+      ORDER BY (${Prisma.join(relevance, ' + ')}) DESC, year DESC NULLS LAST
+      LIMIT 30`);
   }
 
   private async searchAndRespondFallback(query: string) {
@@ -397,25 +513,20 @@ export class ChatService {
     let rulings: any[] = [];
 
     if (keywords.length > 0) {
-      const conditions = keywords.map((_, i) => {
-        const paramIdx = i + 1;
-        return `(summary ILIKE $${paramIdx} OR citation ILIKE $${paramIdx} OR process_type ILIKE $${paramIdx} OR radicado ILIKE $${paramIdx} OR magistrate_ponent ILIKE $${paramIdx} OR full_text ILIKE $${paramIdx})`;
-      });
-      const params: string[] = [];
-      keywords.forEach((k) => params.push(`%${k}%`));
+      const likeParams = keywords.map((k) => Prisma.sql`${`%${k}%`}`);
+      const conditions = likeParams.map((p) =>
+        Prisma.sql`(summary ILIKE ${p} OR citation ILIKE ${p} OR process_type ILIKE ${p} OR radicado ILIKE ${p} OR magistrate_ponent ILIKE ${p} OR full_text ILIKE ${p})`,
+      );
+      const relevance = likeParams.map((p) =>
+        Prisma.sql`((CASE WHEN summary ILIKE ${p} THEN 1 ELSE 0 END) + (CASE WHEN citation ILIKE ${p} THEN 1 ELSE 0 END) + (CASE WHEN full_text ILIKE ${p} THEN 1 ELSE 0 END))`,
+      );
 
-      const relevanceScore = keywords.map((_, i) => {
-        const paramIdx = i + 1;
-        return `(CASE WHEN summary ILIKE $${paramIdx} THEN 1 ELSE 0 END) + (CASE WHEN citation ILIKE $${paramIdx} THEN 1 ELSE 0 END) + (CASE WHEN full_text ILIKE $${paramIdx} THEN 1 ELSE 0 END)`;
-      }).join(' + ');
-
-      const sql = `SELECT id, citation, corporation, chamber, magistrate_ponent, ruling_date, legal_area, themes, summary, resuelve, full_text, source_url, referenced_norms, process_type, radicado
-       FROM rulings
-       WHERE ${conditions.join(' OR ')}
-       ORDER BY (${relevanceScore}) DESC, ruling_date DESC
-       LIMIT 30`;
-
-      rulings = await this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
+      rulings = await this.prisma.$queryRaw<any[]>(Prisma.sql`
+        SELECT id, citation, corporation, chamber, magistrate_ponent, ruling_date, legal_area, themes, summary, resuelve, full_text, source_url, referenced_norms, process_type, radicado
+        FROM rulings
+        WHERE ${Prisma.join(conditions, ' OR ')}
+        ORDER BY (${Prisma.join(relevance, ' + ')}) DESC, ruling_date DESC
+        LIMIT 30`);
     }
 
     if (!rulings || rulings.length === 0) {

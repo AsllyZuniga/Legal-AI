@@ -35,6 +35,9 @@ class SearchResult(BaseModel):
     chunk_id: Optional[str] = None
     section_type: Optional[str] = None
     page_numbers: Optional[str] = None
+    source_url: Optional[str] = None
+    chamber: Optional[str] = None
+    magistrate_ponent: Optional[str] = None
 
 class SearchResponse(BaseModel):
     results: List[SearchResult]
@@ -119,6 +122,7 @@ async def hybrid_search(request: SearchRequest):
             r.id as ruling_id,
             r.citation,
             r.corporation,
+            r.chamber,
             r.ruling_date,
             r.legal_area,
             r.themes,
@@ -174,10 +178,13 @@ async def hybrid_search(request: SearchRequest):
             score=float(row["relevance_score"]),
             snippet=row["snippet"] or "",
             corporation=row["corporation"],
+            chamber=row["chamber"],
+            magistrate_ponent=row["magistrate_ponent"],
             ruling_date=str(row["ruling_date"]) if row["ruling_date"] else None,
             legal_area=row["legal_area"],
             themes=themes_parsed,
             summary=row["summary"],
+            source_url=row["source_url"],
         ))
 
     if results and request.top_k > 5:
@@ -236,11 +243,13 @@ async def semantic_search(request: SearchRequest):
             rc.chunk_level,
             r.citation,
             r.corporation,
+            r.chamber,
             r.ruling_date,
             r.legal_area,
             r.themes,
             r.summary,
             r.source_url,
+            r.magistrate_ponent,
             1 - (rc.embedding <=> $1::vector) as similarity_score
         FROM ruling_chunks rc
         JOIN rulings r ON r.id = rc.ruling_id
@@ -280,11 +289,13 @@ async def semantic_search(request: SearchRequest):
                 2 as chunk_level,
                 r.citation,
                 r.corporation,
+                r.chamber,
                 r.ruling_date,
                 r.legal_area,
                 r.themes,
                 r.summary,
                 r.source_url,
+                r.magistrate_ponent,
                 1.0 as similarity_score
             FROM rulings r
             WHERE {where_clause2}
@@ -317,6 +328,8 @@ async def semantic_search(request: SearchRequest):
             score=float(row["similarity_score"]),
             snippet=row["content"][:500] if row["content"] else "",
             corporation=row["corporation"],
+            chamber=row["chamber"],
+            magistrate_ponent=row["magistrate_ponent"],
             ruling_date=str(row["ruling_date"]) if row["ruling_date"] else None,
             legal_area=row["legal_area"],
             themes=themes_parsed,
@@ -324,6 +337,7 @@ async def semantic_search(request: SearchRequest):
             chunk_id=str(row["chunk_id"]) if row["chunk_id"] else None,
             section_type=row["section_type"],
             page_numbers=row["page_numbers"],
+            source_url=row["source_url"],
         ))
 
     if results and len(results) > 3:

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from app.providers.factory import get_llm_provider
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -90,6 +91,9 @@ async def chat_respond(request: ChatRequest):
     if request.case_context:
         case_context = f"\n\nCONTEXTO DEL CASO:\n{request.case_context}"
 
+    if not settings.OPENAI_API_KEY:
+        raise HTTPException(status_code=503, detail="LLM no configurado (OPENAI_API_KEY vacia)")
+
     try:
         llm = get_llm_provider()
 
@@ -112,8 +116,7 @@ async def chat_respond(request: ChatRequest):
             max_tokens=2000
         )
         return ChatResponse(response=result, confidence=0.8)
+    except HTTPException:
+        raise
     except Exception as e:
-        return ChatResponse(
-            response=f"Lo siento, no pude procesar tu consulta en este momento. Por favor intenta de nuevo.",
-            confidence=0.3
-        )
+        raise HTTPException(status_code=503, detail=f"LLM no disponible: {str(e)[:200]}")
