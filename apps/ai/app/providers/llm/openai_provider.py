@@ -6,7 +6,8 @@ import json
 
 class OpenAILLMProvider(LLMProvider):
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        base_url = settings.OPENAI_BASE_URL or None
+        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=base_url)
         self.model = settings.OPENAI_MODEL
     
     async def chat(

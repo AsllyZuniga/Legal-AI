@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from app.providers.llm.openai_provider import OpenAILLMProvider
+from app.providers.factory import get_llm_provider
 
 router = APIRouter()
 
@@ -91,7 +91,7 @@ async def chat_respond(request: ChatRequest):
         case_context = f"\n\nCONTEXTO DEL CASO:\n{request.case_context}"
 
     try:
-        llm = OpenAILLMProvider()
+        llm = get_llm_provider()
 
         messages = [
             {"role": "system", "content": CHAT_SYSTEM_PROMPT},

@@ -182,8 +182,10 @@ async def hybrid_search(request: SearchRequest):
 
     if results and request.top_k > 5:
         try:
-            from app.providers.reranking.cohere_provider import CohereRerankingProvider
-            reranker = CohereRerankingProvider()
+            from app.providers.factory import get_reranker
+            reranker = get_reranker()
+            if reranker is None:
+                raise RuntimeError("reranking deshabilitado")
             docs = [f"{r.citation}: {r.snippet[:200]}" for r in results]
             reranked = await reranker.rerank(request.query, docs, top_k=min(request.top_k, len(results)))
 
@@ -211,11 +213,11 @@ async def semantic_search(request: SearchRequest):
     db = await get_db()
 
     try:
-        from app.providers.embeddings.openai_provider import OpenAIEmbeddingProvider
-        embedding_provider = OpenAIEmbeddingProvider()
+        from app.providers.factory import get_embedding_provider
+        embedding_provider = get_embedding_provider()
         query_embedding = await embedding_provider.embed_text(request.query)
     except ImportError:
-        raise HTTPException(status_code=503, detail="OpenAI not installed")
+        raise HTTPException(status_code=503, detail="Proveedor de embeddings no instalado")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generando embedding: {str(e)}")
 
@@ -326,8 +328,10 @@ async def semantic_search(request: SearchRequest):
 
     if results and len(results) > 3:
         try:
-            from app.providers.reranking.cohere_provider import CohereRerankingProvider
-            reranker = CohereRerankingProvider()
+            from app.providers.factory import get_reranker
+            reranker = get_reranker()
+            if reranker is None:
+                raise RuntimeError("reranking deshabilitado")
             docs = [f"{r.citation}: {r.snippet[:200]}" for r in results]
             reranked = await reranker.rerank(request.query, docs, top_k=min(request.top_k, len(results)))
             reranked_results = []

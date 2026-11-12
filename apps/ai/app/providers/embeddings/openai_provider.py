@@ -5,7 +5,7 @@ from typing import List
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL or None)
         self.model = settings.OPENAI_EMBEDDING_MODEL
     
     async def embed_text(self, text: str) -> List[float]:
@@ -17,4 +17,12 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         return [item.embedding for item in response.data]
     
     def get_dimension(self) -> int:
-        return settings.EMBEDDING_DIMENSION
+        if "large" in self.model:
+            dim = 3072
+        elif "small" in self.model:
+            dim = 1536
+        else:
+            dim = settings.EMBEDDING_DIMENSION
+        if settings.EMBEDDING_DIMENSION and dim != settings.EMBEDDING_DIMENSION:
+            raise ValueError(f"Embedding dimension mismatch: model={dim}, configured={settings.EMBEDDING_DIMENSION}")
+        return dim
