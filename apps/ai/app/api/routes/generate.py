@@ -315,6 +315,7 @@ REGLAS:
 class GenerateDocumentRequest(BaseModel):
     case_id: str
     document_type: str
+    user_id: Optional[str] = None
     case_data: Optional[Dict] = None
     specific_instructions: Optional[str] = None
     additional_context: Optional[str] = None
@@ -458,7 +459,7 @@ Devuelve el contenido del documento en formato de texto plano con formato Markdo
         doc_id = await db.fetchval(
             """
             INSERT INTO generated_documents (id, case_id, user_id, document_type, title, content, quality_checks, quality_passed, llm_model, created_at, updated_at)
-            VALUES (gen_random_uuid(), $1, '00000000-0000-0000-0000-000000000000', $2, $3, $4, $5, $6, $7, NOW(), NOW())
+            VALUES (gen_random_uuid(), $1, $8, $2, $3, $4, $5, $6, $7, NOW(), NOW())
             RETURNING id
             """,
             request.case_id,
@@ -467,7 +468,8 @@ Devuelve el contenido del documento en formato de texto plano con formato Markdo
             content,
             json.dumps(quality_checks) if quality_checks else None,
             verification.is_valid,
-            "gpt-4o",
+            llm.model,
+            request.user_id or '00000000-0000-0000-0000-000000000000',
         )
 
         return GenerateResponse(
@@ -478,7 +480,7 @@ Devuelve el contenido del documento en formato de texto plano con formato Markdo
             document_type=request.document_type,
             quality_checks=quality_checks,
             quality_passed=verification.is_valid,
-            llm_model="gpt-4o",
+            llm_model=llm.model,
             message="Documento generado exitosamente.",
         )
     except Exception as e:
