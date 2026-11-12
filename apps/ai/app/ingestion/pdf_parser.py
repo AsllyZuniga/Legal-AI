@@ -10,6 +10,7 @@ class ParsedDocument:
     pages: list
     method: str
     confidence: float
+    page_count: int
 
 class PDFParser:
     """Parse PDFs using PyMuPDF (native) or pdfplumber (fallback)."""
@@ -39,6 +40,7 @@ class PDFParser:
             pages=pages,
             method="pymupdf",
             confidence=0.95,
+            page_count=len(pages),
         )
     
     def _parse_pdfplumber(self, file_path: str) -> ParsedDocument:
@@ -57,4 +59,5 @@ class PDFParser:
             pages=pages,
             method="pdfplumber",
             confidence=0.85,
+            page_count=len(pages),
         )
