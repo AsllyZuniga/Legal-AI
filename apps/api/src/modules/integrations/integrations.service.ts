@@ -1,15 +1,31 @@
 ﻿import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { TokenCryptoService } from '../../common/services/token-crypto.service';
+
+const SAFE_FIELDS = {
+  id: true,
+  provider: true,
+  accountEmail: true,
+  accountName: true,
+  isActive: true,
+  scope: true,
+  tokenExpiresAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 @Injectable()
 export class IntegrationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private crypto: TokenCryptoService,
+  ) {}
 
   async getConnection(userId: string, provider: string) {
-    const connection = await this.prisma.integrationConnection.findUnique({
+    return this.prisma.integrationConnection.findUnique({
       where: { userId_provider: { userId, provider } },
+      select: SAFE_FIELDS,
     });
-    return connection;
   }
 
   async getConnections(userId: string) {
@@ -28,27 +44,31 @@ export class IntegrationsService {
   }
 
   async saveConnection(userId: string, data: { provider: string; accessToken: string; refreshToken?: string; tokenExpiresAt?: Date; scope?: string; accountEmail?: string; accountName?: string }) {
+    const accessToken = this.crypto.encrypt(data.accessToken);
+    const refreshToken = this.crypto.encrypt(data.refreshToken);
+
     return this.prisma.integrationConnection.upsert({
       where: { userId_provider: { userId, provider: data.provider } },
       create: {
         userId,
         provider: data.provider,
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
+        accessToken,
+        refreshToken,
         tokenExpiresAt: data.tokenExpiresAt,
         scope: data.scope,
         accountEmail: data.accountEmail,
         accountName: data.accountName,
       },
       update: {
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
+        accessToken,
+        refreshToken,
         tokenExpiresAt: data.tokenExpiresAt,
         scope: data.scope,
         accountEmail: data.accountEmail,
         accountName: data.accountName,
         isActive: true,
       },
+      select: SAFE_FIELDS,
     });
   }
 
@@ -60,6 +80,7 @@ export class IntegrationsService {
     return this.prisma.integrationConnection.update({
       where: { userId_provider: { userId, provider } },
       data: { isActive: false, accessToken: null, refreshToken: null },
+      select: SAFE_FIELDS,
     });
   }
 

@@ -3,17 +3,19 @@ import { ConfigService } from '@nestjs/config';
 import { google } from 'googleapis';
 import { PrismaService } from '../../prisma.service';
 import { MinioService } from '../../common/services/minio.service';
+import { TokenCryptoService } from '../../common/services/token-crypto.service';
 
 @Injectable()
 export class GoogleDriveService {
-  private oauth2Client;
-
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
     private minioService: MinioService,
-  ) {
-    this.oauth2Client = new google.auth.OAuth2(
+    private crypto: TokenCryptoService,
+  ) {}
+
+  private createOAuth2Client() {
+    return new google.auth.OAuth2(
       this.configService.get<string>('GOOGLE_CLIENT_ID'),
       this.configService.get<string>('GOOGLE_CLIENT_SECRET'),
       this.configService.get<string>('GOOGLE_REDIRECT_URI'),
@@ -21,7 +23,7 @@ export class GoogleDriveService {
   }
 
   getAuthUrl(): string {
-    return this.oauth2Client.generateAuthUrl({
+    return this.createOAuth2Client().generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
       scope: [
@@ -33,10 +35,11 @@ export class GoogleDriveService {
   }
 
   async exchangeCode(userId: string, code: string) {
-    const { tokens } = await this.oauth2Client.getToken(code);
-    this.oauth2Client.setCredentials(tokens);
+    const oauth2Client = this.createOAuth2Client();
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
 
-    const oauth2 = google.oauth2({ version: 'v2', auth: this.oauth2Client });
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const { data: userInfo } = await oauth2.userinfo.get();
 
     const existing = await this.prisma.integrationConnection.findUnique({
@@ -48,8 +51,8 @@ export class GoogleDriveService {
       create: {
         userId,
         provider: 'google',
-        accessToken: tokens.access_token!,
-        refreshToken: tokens.refresh_token || null,
+        accessToken: this.crypto.encrypt(tokens.access_token!),
+        refreshToken: this.crypto.encrypt(tokens.refresh_token || null),
         tokenExpiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
         scope: tokens.scope || '',
         accountEmail: userInfo.email || null,
@@ -57,13 +60,25 @@ export class GoogleDriveService {
         isActive: true,
       },
       update: {
-        accessToken: tokens.access_token!,
-        refreshToken: tokens.refresh_token || existing?.refreshToken || null,
+        accessToken: this.crypto.encrypt(tokens.access_token!),
+        refreshToken: tokens.refresh_token
+          ? this.crypto.encrypt(tokens.refresh_token)
+          : existing?.refreshToken || null,
         tokenExpiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
         scope: tokens.scope || '',
         accountEmail: userInfo.email || null,
         accountName: userInfo.name || null,
         isActive: true,
+      },
+      select: {
+        id: true,
+        provider: true,
+        accountEmail: true,
+        accountName: true,
+        isActive: true,
+        scope: true,
+        tokenExpiresAt: true,
+        createdAt: true,
       },
     });
 
@@ -79,24 +94,25 @@ export class GoogleDriveService {
       throw new BadRequestException('No hay conexion con Google Drive. Conecta tu cuenta primero.');
     }
 
-    this.oauth2Client.setCredentials({
-      access_token: connection.accessToken,
-      refresh_token: connection.refreshToken,
+    const oauth2Client = this.createOAuth2Client();
+    oauth2Client.setCredentials({
+      access_token: this.crypto.decrypt(connection.accessToken),
+      refresh_token: this.crypto.decrypt(connection.refreshToken),
     });
 
     if (connection.tokenExpiresAt && new Date(connection.tokenExpiresAt) < new Date()) {
-      const { credentials } = await this.oauth2Client.refreshAccessToken();
+      const { credentials } = await oauth2Client.refreshAccessToken();
       await this.prisma.integrationConnection.update({
         where: { userId_provider: { userId, provider: 'google' } },
         data: {
-          accessToken: credentials.access_token!,
+          accessToken: this.crypto.encrypt(credentials.access_token!),
           tokenExpiresAt: credentials.expiry_date ? new Date(credentials.expiry_date) : null,
         },
       });
-      this.oauth2Client.setCredentials(credentials);
+      oauth2Client.setCredentials(credentials);
     }
 
-    return this.oauth2Client;
+    return oauth2Client;
   }
 
   async uploadToDrive(userId: string, fileBuffer: Buffer, fileName: string, mimeType: string): Promise<{ driveFileId: string; webViewLink: string }> {
@@ -152,5 +168,11 @@ export class GoogleDriveService {
 
     const res = await drive.files.get({ fileId: driveFileId, fields: 'webViewLink,mimeType' });
     return res.data.webViewLink || `https://docs.google.com/document/d/${driveFileId}/edit`;
+  }
+
+  async deleteFromDrive(userId: string, driveFileId: string): Promise<void> {
+    const auth = await this.getAuthenticatedClient(userId);
+    const drive = google.drive({ version: 'v3', auth });
+    await drive.files.delete({ fileId: driveFileId });
   }
 }
