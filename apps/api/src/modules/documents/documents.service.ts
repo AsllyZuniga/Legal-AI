@@ -93,10 +93,37 @@ export class DocumentsService {
   }
 
   async remove(userId: string, documentId: string) {
-    const doc = await this.prisma.userDocument.findUnique({ where: { id: documentId } });
-    if (!doc) throw new NotFoundException('Documento no encontrado');
-    if (doc.userId !== userId) throw new ForbiddenException('No tienes acceso a este documento');
+    const doc = await this.findOne(userId, documentId);
+
+    if (doc.externalId) {
+      try {
+        await this.googleDriveService.deleteFromDrive(userId, doc.externalId);
+      } catch {
+      }
+    }
+
+    if (doc.fileUrl) {
+      try {
+        await this.minioService.deleteFile(this.extractObjectName(doc.fileUrl));
+      } catch {
+      }
+    }
+
     return this.prisma.userDocument.delete({ where: { id: documentId } });
+  }
+
+  async getFileContent(userId: string, documentId: string) {
+    const doc = await this.findOne(userId, documentId);
+    if (!doc.fileUrl) {
+      throw new NotFoundException('El documento no tiene archivo asociado');
+    }
+    const objectName = this.extractObjectName(doc.fileUrl);
+    const buffer = await this.minioService.getFileBuffer(objectName);
+    return {
+      buffer,
+      mimeType: doc.mimeType || 'application/octet-stream',
+      fileName: doc.fileName,
+    };
   }
 
   async openInGoogleDocs(userId: string, documentId: string) {
@@ -140,10 +167,7 @@ export class DocumentsService {
 
     const { buffer, mimeType } = await this.googleDriveService.downloadFromDrive(userId, doc.externalId);
 
-    const objectName = `${Date.now()}-${doc.fileName.replace(/\s+/g, '_')}`;
-    await this.minioService.uploadFile(buffer, doc.fileName, mimeType);
-
-    const fileUrl = `http://localhost:9000/legal-documents/${objectName}`;
+    const { fileUrl } = await this.minioService.uploadFile(buffer, doc.fileName, mimeType);
 
     await this.prisma.userDocument.update({
       where: { id: documentId },
@@ -161,8 +185,20 @@ export class DocumentsService {
   }
 
   private extractObjectName(fileUrl: string): string {
-    const url = new URL(fileUrl);
-    const parts = url.pathname.split('/');
-    return parts.slice(2).join('/');
+    if (!fileUrl) {
+      throw new NotFoundException('El documento no tiene archivo asociado');
+    }
+
+    if (fileUrl.startsWith('minio://')) {
+      return fileUrl.replace(/^minio:\/\/[^/]+\//, '');
+    }
+
+    if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+      const parts = new URL(fileUrl).pathname.split('/').filter(Boolean);
+      return parts.slice(1).join('/');
+    }
+
+    const parts = fileUrl.split('/').filter(Boolean);
+    return parts.length > 1 ? parts.slice(1).join('/') : fileUrl;
   }
 }

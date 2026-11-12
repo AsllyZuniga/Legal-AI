@@ -6,12 +6,14 @@ import {
   Param,
   Body,
   Query,
+  Res,
   UseGuards,
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -62,6 +64,26 @@ export class DocumentsController {
   @ApiOperation({ summary: 'Obtener documento' })
   findOne(@CurrentUser() user: any, @Param('id') id: string) {
     return this.documentsService.findOne(user.sub, id);
+  }
+
+  @Get(':id/content')
+  @ApiOperation({ summary: 'Ver o descargar el contenido del documento (autenticado)' })
+  async content(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Query('download') download: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, mimeType, fileName } = await this.documentsService.getFileContent(user.sub, id);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Length', buffer.length);
+    const disposition = download ? 'attachment' : 'inline';
+    res.setHeader(
+      'Content-Disposition',
+      `${disposition}; filename="${encodeURIComponent(fileName)}"`,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(buffer);
   }
 
   @Delete(':id')

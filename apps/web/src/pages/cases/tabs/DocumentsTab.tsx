@@ -19,6 +19,7 @@ export default function DocumentsTab({ caseId, caseData }: { caseId: string; cas
   const [aiResult, setAiResult] = useState<string>('');
   const [reviewResult, setReviewResult] = useState<string>('');
   const [showPreview, setShowPreview] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -29,6 +30,47 @@ export default function DocumentsTab({ caseId, caseData }: { caseId: string; cas
     loadDocuments();
     checkGoogleConnection();
   }, [caseId]);
+
+  useEffect(() => {
+    let url: string | null = null;
+    let cancelled = false;
+    if (showPreview && selectedDoc) {
+      api
+        .get(`/documents/${selectedDoc.id}/content`, { responseType: 'blob' })
+        .then((res) => {
+          if (cancelled) return;
+          url = URL.createObjectURL(res.data);
+          setPreviewUrl(url);
+        })
+        .catch(() => {
+          if (!cancelled) setPreviewUrl(null);
+        });
+    } else {
+      setPreviewUrl(null);
+    }
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [showPreview, selectedDoc]);
+
+  const handleDownload = async (doc: any) => {
+    try {
+      const res = await api.get(`/documents/${doc.id}/content?download=1`, {
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = doc.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Error descargando el documento');
+    }
+  };
 
   const checkGoogleConnection = async () => {
     try {
@@ -450,18 +492,33 @@ export default function DocumentsTab({ caseId, caseData }: { caseId: string; cas
             </div>
             <div className="flex-1 overflow-auto p-6">
               {selectedDoc.mimeType?.includes('image') ? (
-                <img src={selectedDoc.fileUrl} alt={selectedDoc.fileName} className="max-w-full h-auto mx-auto" />
+                previewUrl ? (
+                  <img src={previewUrl} alt={selectedDoc.fileName} className="max-w-full h-auto mx-auto" />
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground"><Loader2 className="h-6 w-6 mx-auto animate-spin" /></div>
+                )
               ) : selectedDoc.mimeType?.includes('pdf') ? (
-                <iframe src={selectedDoc.fileUrl} className="w-full h-full border-0" title={selectedDoc.fileName} />
+                previewUrl ? (
+                  <iframe src={previewUrl} className="w-full h-full border-0" title={selectedDoc.fileName} />
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground"><Loader2 className="h-6 w-6 mx-auto animate-spin" /></div>
+                )
               ) : selectedDoc.extractedText ? (
                 <pre className="whitespace-pre-wrap text-sm font-mono">{selectedDoc.extractedText}</pre>
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
                   <FileText className="h-16 w-16 mx-auto mb-4 opacity-30" />
                   <p>Vista previa no disponible para este formato</p>
-                  <a href={selectedDoc.fileUrl} download className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm">
+                  <button onClick={() => handleDownload(selectedDoc)} className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm">
                     <Download className="h-4 w-4" /> Descargar
-                  </a>
+                  </button>
+                </div>
+              )}
+              {(selectedDoc.mimeType?.includes('image') || selectedDoc.mimeType?.includes('pdf')) && (
+                <div className="text-center mt-4">
+                  <button onClick={() => handleDownload(selectedDoc)} className="inline-flex items-center gap-2 px-4 py-2 border rounded-md text-sm">
+                    <Download className="h-4 w-4" /> Descargar
+                  </button>
                 </div>
               )}
             </div>

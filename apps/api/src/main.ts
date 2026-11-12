@@ -12,8 +12,9 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
   app.useStaticAssets(join(__dirname, '..', 'public'), { prefix: '/templates/' });
+  const frontendUrl = configService.get('FRONTEND_URL', 'http://localhost:5173');
   app.enableCors({
-    origin: configService.get('FRONTEND_URL', 'http://localhost:5173'),
+    origin: [frontendUrl, 'http://localhost:5173', 'http://127.0.0.1:5173'],
     credentials: true,
   });
 
@@ -38,8 +39,8 @@ async function bootstrap() {
 
   const port = configService.get('API_PORT', 3001);
   await app.listen(port);
-  console.log(`🚀 API running on http://localhost:${port}`);
-  console.log(`📚 Swagger docs: http://localhost:${port}/docs`);
+  console.log(`API running on http://localhost:${port}`);
+  console.log(`Swagger docs: http://localhost:${port}/docs`);
 }
 
 bootstrap();

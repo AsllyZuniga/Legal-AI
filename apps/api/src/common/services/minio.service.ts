@@ -39,9 +39,8 @@ export class MinioService implements OnModuleInit {
       'Content-Type': mimeType,
     });
 
-    const endPoint = this.configService.get<string>('MINIO_ENDPOINT', 'localhost');
-    const port = this.configService.get<number>('MINIO_PORT', 9000);
-    const fileUrl = `http://${endPoint}:${port}/${this.bucket}/${objectName}`;
+    // URI interna (no publica): el bucket NO se expone; el acceso pasa por la API.
+    const fileUrl = `minio://${this.bucket}/${objectName}`;
 
     return { fileUrl, objectName };
   }
@@ -56,8 +55,15 @@ export class MinioService implements OnModuleInit {
     });
   }
 
-  async getFileUrl(objectName: string, expirySeconds = 3600): Promise<string> {
-    return this.client.presignedGetObject(this.bucket, objectName, expirySeconds);
+  async getFileUrl(
+    objectName: string,
+    expirySeconds = 3600,
+    downloadFileName?: string,
+  ): Promise<string> {
+    const respHeaders = downloadFileName
+      ? { 'response-content-disposition': `attachment; filename="${downloadFileName}"` }
+      : undefined;
+    return this.client.presignedGetObject(this.bucket, objectName, expirySeconds, respHeaders);
   }
 
   async deleteFile(objectName: string): Promise<void> {
