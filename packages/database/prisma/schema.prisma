@@ -427,41 +427,43 @@ model IntegrationConnection {
 // ============================================
 
 model Ruling {
-  id               String    @id @default(uuid()) @db.Uuid
-  citation         String
-  rulingType       String?   @map("ruling_type")
-  processType      String?   @map("process_type")
-  corporation      String
-  chamber          String?
-  section          String?
-  magistratePonent String?   @map("magistrate_ponent")
-  magistrates      String?
-  rulingDate       DateTime? @map("ruling_date")
-  publicationDate  DateTime? @map("publication_date")
-  legalArea        String?   @map("legal_area")
-  themes           Json      @default("[]")
-  subthemes        Json      @default("[]")
-  summary          String?
-  fullText         String?   @map("full_text")
-  resuelve         String?
-  sourceUrl        String?   @map("source_url")
-  sourceType       String    @default("official") @map("source_type")
-  source           String    @default("corte_constitucional")
-  pdfUrl           String?   @map("pdf_url")
-  docxUrl          String?   @map("docx_url")
-  downloadUrls     Json      @default("{}") @map("download_urls")
-  radicado         String?
-  referencedNorms  Json      @default("[]") @map("referenced_norms")
-  citedRulings     Json      @default("[]") @map("cited_rulings")
-  citingRulings    Json      @default("[]") @map("citing_rulings")
-  similarityScore  Decimal?  @map("similarity_score") @db.Decimal(5, 2)
-  aiAnalysis       Json?     @map("ai_analysis")
-  embeddingStatus  String    @default("pending") @map("embedding_status")
-  lastSyncAt       DateTime? @map("last_sync_at")
-  metadata         Json      @default("{}")
-  searchVector     Unsupported("tsvector")? @map("search_vector")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id                String    @id @default(uuid()) @db.Uuid
+  citation          String
+  citationCanonical String?   @map("citation_canonical")
+  rulingType        String?   @map("ruling_type")
+  processType       String?   @map("process_type")
+  corporation       String
+  chamber           String?
+  section           String?
+  magistratePonent  String?   @map("magistrate_ponent")
+  magistrates       String?
+  rulingDate        DateTime? @map("ruling_date")
+  publicationDate   DateTime? @map("publication_date")
+  legalArea         String?   @map("legal_area")
+  themes            Json      @default("[]")
+  subthemes         Json      @default("[]")
+  summary           String?
+  summarySource     String?   @map("summary_source")
+  fullText          String?   @map("full_text")
+  resuelve          String?
+  sourceUrl         String?   @map("source_url")
+  sourceType        String    @default("official") @map("source_type")
+  source            String    @default("corte_constitucional")
+  pdfUrl            String?   @map("pdf_url")
+  docxUrl           String?   @map("docx_url")
+  downloadUrls      Json      @default("{}") @map("download_urls")
+  radicado          String?
+  referencedNorms   Json      @default("[]") @map("referenced_norms")
+  citedRulings      Json      @default("[]") @map("cited_rulings")
+  citingRulings     Json      @default("[]") @map("citing_rulings")
+  similarityScore   Decimal?  @map("similarity_score") @db.Decimal(5, 2)
+  aiAnalysis        Json?     @map("ai_analysis")
+  embeddingStatus   String    @default("pending") @map("embedding_status")
+  lastSyncAt        DateTime? @map("last_sync_at")
+  metadata          Json      @default("{}")
+  searchVector      Unsupported("tsvector")? @map("search_vector")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   rulingChunks    RulingChunk[]
   sourceRelations JudgmentRelationship[] @relation("sourceRuling")
@@ -518,29 +520,31 @@ model JudgmentRelationship {
 // ============================================
 
 model Law {
-  id              String    @id @default(uuid()) @db.Uuid
-  name            String
-  number          String?
-  year            Int?
-  type            String?
-  subtipo         String?
-  sector          String?
-  entidad         String?
-  materia         String?
-  articulos       Int?
-  vigencia        String?
-  description     String?
-  fullText        String?   @map("full_text")
-  sourceUrl       String?   @map("source_url")
-  source          String    @default("suin_juriscol")
-  isVigente       Boolean   @default(true) @map("is_vigente")
-  modifiedBy      String?   @map("modified_by")
-  effectiveDate   DateTime? @map("effective_date")
-  embeddingStatus String    @default("pending") @map("embedding_status")
-  lastSyncAt      DateTime? @map("last_sync_at")
-  searchVector   Unsupported("tsvector")? @map("search_vector")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String
+  number             String?
+  year               Int?
+  type               String?
+  subtipo            String?
+  sector             String?
+  entidad            String?
+  materia            String?
+  articulos          Int?
+  vigencia           String?
+  vigenciaConfidence String?   @default("desconocida") @map("vigencia_confidence")
+  description        String?
+  fullText           String?   @map("full_text")
+  sourceUrl          String?   @map("source_url")
+  source             String    @default("suin_juriscol")
+  isVigente          Boolean   @default(true) @map("is_vigente")
+  modifiedBy         String?   @map("modified_by")
+  effectiveDate      DateTime? @map("effective_date")
+  capturedAt         DateTime? @map("captured_at")
+  embeddingStatus    String    @default("pending") @map("embedding_status")
+  lastSyncAt         DateTime? @map("last_sync_at")
+  searchVector       Unsupported("tsvector")? @map("search_vector")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   lawChunks LawChunk[]
 
