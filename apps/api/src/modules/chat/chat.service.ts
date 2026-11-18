@@ -195,7 +195,25 @@ export class ChatService {
   ): Promise<{ response: string; citations: any[]; sources: any[]; confidence: number } | null> {
     if (!this.aiServiceUrl) return null;
 
-    const searchResults = await this.aiSemanticSearch(query);
+    let searchResults = await this.aiSemanticSearch(query);
+
+    if (searchResults.length === 0) {
+      const keywordResults = await this.searchRulings(query);
+      searchResults = keywordResults.slice(0, 10).map(r => ({
+        ruling_id: r.id,
+        citation: r.citation,
+        corporation: r.corporation,
+        chamber: r.chamber,
+        magistrate_ponent: r.magistrate_ponent,
+        ruling_date: r.ruling_date,
+        legal_area: r.legal_area,
+        summary: r.summary,
+        snippet: r.summary || r.resuelve || (r.full_text || '').substring(0, 500),
+        source_url: r.source_url,
+      }));
+    }
+
+    if (searchResults.length === 0) return null;
 
     try {
       const payload = {
@@ -509,6 +527,49 @@ export class ChatService {
   }
 
   private async searchAndRespondFallback(query: string) {
+    const citationMatch = query.match(/([TC]-\d+\/\d+|SC-\d+-\d+)/i);
+    if (citationMatch) {
+      try {
+        const ruling = await this.prisma.ruling.findFirst({
+          where: { citation: { contains: citationMatch[1], mode: 'insensitive' } },
+        });
+        if (ruling) {
+          return {
+            response: generateCitationResponse(
+              {
+                id: ruling.id,
+                citation: ruling.citation,
+                corporation: nullToUndefined(ruling.corporation),
+                chamber: nullToUndefined(ruling.chamber),
+                magistratePonent: nullToUndefined(ruling.magistratePonent),
+                rulingDate: nullToUndefined(ruling.rulingDate),
+                processType: nullToUndefined(ruling.processType),
+                legalArea: nullToUndefined(ruling.legalArea),
+                themes: ruling.themes as string[] | undefined,
+                summary: nullToUndefined(ruling.summary),
+                resuelve: nullToUndefined(ruling.resuelve),
+                fullText: nullToUndefined(ruling.fullText),
+                referencedNorms: ruling.referencedNorms as string[] | undefined,
+                sourceUrl: nullToUndefined(ruling.sourceUrl),
+              },
+              query,
+            ),
+            citations: [{ text: ruling.citation, rulingId: ruling.id }],
+            sources: [{
+              id: ruling.id,
+              type: 'ruling',
+              title: ruling.citation,
+              snippet: (ruling.summary || ruling.resuelve || '').substring(0, 200),
+              hasPdf: !!ruling.fullText && ruling.fullText.length > 0,
+              hasDocx: !!ruling.sourceUrl,
+              sourceUrl: ruling.sourceUrl,
+            }],
+            confidence: 0.9,
+          };
+        }
+      } catch {}
+    }
+
     const keywords = query.split(/\s+/).filter((w) => w.length > 2);
     let rulings: any[] = [];
 
